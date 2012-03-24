@@ -17,6 +17,8 @@
 
 require 'redmine/scm/adapters/abstract_adapter'
 require 'cgi'
+require 'rubygems'
+require 'UniversalDetector'
 
 module Redmine
   module Scm
@@ -255,7 +257,18 @@ module Redmine
           diff = []
           hg *hg_args do |io|
             io.each_line do |line|
-              diff << line
+              iconv_line = line
+              if !line.nil?
+                detected = UniversalDetector::chardet(line)
+                enc = detected['encoding']
+                if !enc.nil?
+                  begin
+                    iconv_line = Iconv.conv('UTF-8', enc, line)
+                  rescue Iconv::Failure => err
+                  end
+                end
+              end
+              diff << iconv_line
             end
           end
           diff
@@ -267,7 +280,18 @@ module Redmine
           p = CGI.escape(scm_iconv(@path_encoding, 'UTF-8', path))
           hg 'rhcat', '-r', CGI.escape(hgrev(identifier)), hgtarget(p) do |io|
             io.binmode
-            io.read
+            str = io.read
+            return nil if str.nil?
+            iconv_str = str
+            detected = UniversalDetector::chardet(str)
+            enc = detected['encoding']
+            if !enc.nil?
+              begin
+                iconv_str = Iconv.conv('UTF-8', enc, str)
+              rescue Iconv::Failure => err
+              end
+            end
+            return iconv_str
           end
         rescue HgCommandAborted
           nil  # means not found
@@ -282,7 +306,19 @@ module Redmine
               next unless line =~ %r{^([^:]+)\s(\d+)\s([0-9a-f]+):\s(.*)$}
               r = Revision.new(:author => $1.strip, :revision => $2, :scmid => $3,
                                :identifier => $3)
-              blame.add_line($4.rstrip, r)
+              str = $4.rstrip
+              iconv_str = str
+              if !str.nil?
+                detected = UniversalDetector::chardet(str)
+                enc = detected['encoding']
+                if !enc.nil?
+                  begin
+                    iconv_str = Iconv.conv('UTF-8', enc, str)
+                  rescue Iconv::Failure => err
+                  end
+                end
+              end
+              blame.add_line(iconv_str, r)
             end
           end
           blame
